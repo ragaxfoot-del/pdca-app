@@ -6,6 +6,7 @@
 
 import { createContext, useContext, useState } from "react";
 import { apiPost } from "../api/client";
+import { storageGet, storageSet, storageRemove } from "../utils/storage";
 
 // 認証情報を格納するContext（アプリ全体で共有できる入れ物）
 const AuthContext = createContext(null);
@@ -18,7 +19,7 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   // localStorageからトークンを復元し、ログイン状態を初期化
   const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem("pdca_user");
+    const saved = storageGet("pdca_user");
     return saved ? JSON.parse(saved) : null;
   });
 
@@ -29,16 +30,16 @@ export function AuthProvider({ children }) {
     if (!data.success) {
       throw new Error(data.message || "ログインに失敗しました");
     }
-    localStorage.setItem("pdca_token", data.token);
-    localStorage.setItem("pdca_user", JSON.stringify(data.user));
+    storageSet("pdca_token", data.token);
+    storageSet("pdca_user", JSON.stringify(data.user));
     setUser(data.user);
     return data.user;
   };
 
   // ログアウト処理
   const logout = () => {
-    localStorage.removeItem("pdca_token");
-    localStorage.removeItem("pdca_user");
+    storageRemove("pdca_token");
+    storageRemove("pdca_user");
     setUser(null);
   };
 

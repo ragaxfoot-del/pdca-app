@@ -8,8 +8,14 @@
 // そのため <script> タグを動的に生成するJSONP方式を採用する。
 // JSONPはブラウザのCORS制限を受けないため確実に動作する。
 //
-// GAS側は ?callback=関数名 があればレスポンスを 関数名({...}) 形式で返す。
+// 【トークン送信方式】
+// Base64トークンをURLに直接埋め込むと、URLエンコード（%2B等）で
+// GAS側のデコードが狂い「認証が無効です」になる場合がある。
+// そのため apiGet / apiPost ともに data=JSON 形式で送り、
+// GAS側は e.parameter.data をパースして body.token で受け取る。
 // ============================================================
+
+import { storageGet } from "../utils/storage";
 
 const API_URL = import.meta.env.VITE_GAS_URL || "http://localhost:3000";
 
@@ -45,30 +51,37 @@ function jsonpRequest(url) {
 }
 
 // ------------------------------------------------------------
-// GETリクエスト
+// GETリクエスト（apiPost と同じ data=JSON 形式で送信）
+//
 // 例: apiGet("getGoals", { dept: "EC事業部" })
-//   → JSONP {API_URL}?action=getGoals&dept=EC事業部&token=xxx&callback=__gasCb_xxx
+//   → JSONP ?action=getGoals&data={"dept":"EC事業部","token":"xxx"}&callback=__gasCb_xxx
+//
+// tokenをURLに直接埋め込まずJSONに入れることでエンコード問題を回避する。
+// GAS側は e.parameter.data をJSON.parseして body.token で受け取る。
 // ------------------------------------------------------------
 export async function apiGet(action, params = {}) {
-  const token = localStorage.getItem("pdca_token");
+  const token = storageGet("pdca_token");
 
-  const query = new URLSearchParams({ action, ...params });
-  if (token) query.set("token", token);
+  const payload = { ...params };
+  if (token) payload.token = token;
+
+  const query = new URLSearchParams({ action });
+  query.set("data", JSON.stringify(payload));
 
   return jsonpRequest(`${API_URL}?${query.toString()}`);
 }
 
 // ------------------------------------------------------------
 // POST → JSONP変換リクエスト（GAS CORS対策）
+//
 // 例: apiPost("login", { email: "xxx", password: "xxx" })
-//   → JSONP {API_URL}?action=login&data=JSON文字列&callback=__gasCb_xxx
+//   → JSONP ?action=login&data={"email":"xxx","password":"xxx"}&callback=__gasCb_xxx
 //
 // GAS側の doGet は ?data= パラメータを JSON.parse して body として扱う。
 // ------------------------------------------------------------
 export async function apiPost(action, body = {}) {
-  const token = localStorage.getItem("pdca_token");
+  const token = storageGet("pdca_token");
 
-  // token を payload に含める（GAS側で body.token として取り出す）
   const payload = { ...body };
   if (token) payload.token = token;
 
