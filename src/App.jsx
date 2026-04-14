@@ -1,11 +1,13 @@
 // ============================================================
 // App.jsx — ルーティング設定
 // ============================================================
-// BrowserRouter: URLの変化でコンポーネントを切り替える仕組み
-// Routes / Route: どのURLにどのページを表示するかの定義
+// HashRouter: URLに # を使うルーター（例: /pdca-app/#/login）
+// GitHub Pagesはサーバーサイドルーティングがないため、
+// BrowserRouter（/pdca-app/login）だと直接アクセス時に404になる。
+// HashRouterなら # 以降はサーバーに送られないため404にならない。
 // ============================================================
 
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./hooks/useAuth.jsx";
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
@@ -38,7 +40,7 @@ function AdminRoute({ children }) {
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
+      <HashRouter>
         <Routes>
           {/* ログイン画面 */}
           <Route path="/login" element={<LoginPageGuard />} />
@@ -66,7 +68,7 @@ export default function App() {
           {/* 未定義URLはトップへ */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-      </BrowserRouter>
+      </HashRouter>
     </AuthProvider>
   );
 }
