@@ -12,12 +12,12 @@ import { DEPTS, DEPT_COLORS, ROLE_LABELS, STATUSES, getStatus } from "../utils/c
 // 週タブの定義
 // ============================================================
 const WEEK_TABS = [
-  { label: "2/27週", weekKey: "2025-02-27" },
-  { label: "3/6週",  weekKey: "2025-03-06" },
-  { label: "3/13週", weekKey: "2025-03-13" },
-  { label: "3/20週", weekKey: "2025-03-20" },
-  { label: "3/27週", weekKey: "2025-03-27" },
-  { label: "4/3週",  weekKey: "2025-04-03" },
+  { label: "2/27週", weekKey: "2026-02-27" },
+  { label: "3/6週",  weekKey: "2026-03-06" },
+  { label: "3/13週", weekKey: "2026-03-13" },
+  { label: "3/20週", weekKey: "2026-03-20" },
+  { label: "3/27週", weekKey: "2026-03-27" },
+  { label: "4/3週",  weekKey: "2026-04-03" },
 ];
 
 // ============================================================
@@ -185,7 +185,7 @@ export default function DashboardPage() {
             {user?.name}（{ROLE_LABELS[user?.role] || user?.role}）
           </span>
           <button onClick={() => setShowModal(true)} style={styles.newBtn}>＋ 新規入力</button>
-          {user?.role === "admin" && (
+          {(user?.role || "").toLowerCase().trim() === "admin" && (
             <button onClick={() => navigate("/admin")} style={styles.adminBtn}>ユーザー管理</button>
           )}
           <button onClick={logout} style={styles.logoutBtn}>ログアウト</button>
@@ -430,9 +430,11 @@ function PdcaCard({
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError]   = useState("");
 
-  const canBoss = user?.role === "boss" || user?.role === "admin";
+  const userRole = (user?.role || "").toLowerCase().trim();
+  const canBoss = userRole === "boss" || userRole === "admin";
   // general は自部門のみ編集可、boss/admin は全部門
-  const canEdit = canBoss || user?.dept === pdca.dept;
+  const userDept = (user?.dept || "").trim();
+  const canEdit = canBoss || userDept === (pdca.dept || "").trim();
 
   const goal     = goalsMap[pdca.goalId];
   const goalName = goal?.goalName || "（大目標不明）";
@@ -637,7 +639,7 @@ function PdcaGrid({
   const [annotationText, setAnnotationText]   = useState("");
   const [annotationSaving, setAnnotationSaving] = useState(false);
 
-  const canBoss = user?.role === "boss" || user?.role === "admin";
+  const canBoss = ["boss", "admin"].includes((user?.role || "").toLowerCase().trim());
 
   const handleAnnotationSave = async (sectionKey) => {
     if (!annotationText.trim()) return;
@@ -780,7 +782,7 @@ function PdcaGrid({
 // BossArea — 社長確認エリア（確認チェック + コメント）
 // ============================================================
 function BossArea({ pdca, user, onPdcaChanged }) {
-  const canBoss = user?.role === "boss" || user?.role === "admin";
+  const canBoss = ["boss", "admin"].includes((user?.role || "").toLowerCase().trim());
 
   const [confirming, setConfirming]       = useState(false);
   const [commentText, setCommentText]     = useState("");
