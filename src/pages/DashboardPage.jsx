@@ -43,6 +43,7 @@ export default function DashboardPage() {
 
   const [highlightId, setHighlightId]     = useState(null);
   const [pendingScroll, setPendingScroll] = useState(null);
+  const [autoEditCardId, setAutoEditCardId] = useState(null);
 
   // 大目標取得
   useEffect(() => {
@@ -122,10 +123,17 @@ export default function DashboardPage() {
 
   const createAndNavigate = useCallback(async (nextWeekKey, pdca) => {
     try {
+      // 現在のACTを次週のPLANとして引き継ぐ
       const data = await apiPost("savePdca", {
-        weekKey: nextWeekKey, goalId: pdca.goalId, midGoal: pdca.midGoal, dept: pdca.dept,
+        weekKey: nextWeekKey,
+        goalId:  pdca.goalId,
+        midGoal: pdca.midGoal,
+        dept:    pdca.dept,
+        plan:    pdca.act || "",
       });
       if (!data.success) throw new Error(data.message);
+      // 作成されたカードのIDを記憶（表示後に自動で編集モードを開く）
+      if (data.pdca?.id) setAutoEditCardId(data.pdca.id);
       const refreshed = await apiGet("getPdca", {
         weekKey: nextWeekKey,
         ...(deptFilter !== "全部門" ? { dept: deptFilter } : {}),
@@ -221,6 +229,8 @@ export default function DashboardPage() {
               createAndNavigate={createAndNavigate}
               user={user}
               onPdcaChanged={handlePdcaChanged}
+              autoEditCardId={autoEditCardId}
+              onAutoEditDone={() => setAutoEditCardId(null)}
             />
           );
         })}
@@ -351,6 +361,7 @@ function DeptSection({
   dept, pdcaList, goalsMap, isLoading,
   weekKey, pdcaAllWeeks, highlightId, navigateToWeek, createAndNavigate,
   user, onPdcaChanged,
+  autoEditCardId, onAutoEditDone,
 }) {
   const color     = DEPT_COLORS[dept] || "#6b7280";
   const total     = pdcaList.length;
@@ -380,6 +391,8 @@ function DeptSection({
               createAndNavigate={createAndNavigate}
               user={user}
               onPdcaChanged={onPdcaChanged}
+              shouldAutoEdit={autoEditCardId === pdca.id}
+              onAutoEditDone={onAutoEditDone}
             />
           ))}
         </div>
@@ -423,6 +436,7 @@ function PdcaCard({
   weekKey, pdcaAllWeeks, isHighlighted,
   navigateToWeek, createAndNavigate,
   user, onPdcaChanged,
+  shouldAutoEdit, onAutoEditDone,
 }) {
   const [isOpen, setIsOpen]       = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -467,6 +481,15 @@ function PdcaCard({
     setIsOpen(true);
     setEditError("");
   };
+
+  // 次週プラン作成後に自動で編集モードを開く
+  useEffect(() => {
+    if (shouldAutoEdit) {
+      startEdit();
+      onAutoEditDone?.();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldAutoEdit]);
 
   // 編集保存
   const handleEditSave = async () => {
@@ -673,7 +696,7 @@ function PdcaGrid({
     { key: "act",   label: "🔄 ACT",   color: "#ef4444",
       content: pdca.act,   ann: pdca.annAct,
       navBtn: nextWeekKey
-        ? { label: hasNext ? "次週PLANへ →" : "次週作成 →", disabled: false, onClick: onNavNext }
+        ? { label: hasNext ? "次週PLANへ →" : "次週プラン作成", disabled: false, onClick: onNavNext, isPrimary: !hasNext }
         : null },
   ];
 
@@ -706,7 +729,11 @@ function PdcaGrid({
                     disabled={navBtn.disabled}
                     style={{
                       ...gridStyles.navBtn,
-                      ...(navBtn.disabled ? gridStyles.navBtnDisabled : gridStyles.navBtnActive),
+                      ...(navBtn.disabled
+                        ? gridStyles.navBtnDisabled
+                        : navBtn.isPrimary
+                          ? gridStyles.navBtnPrimary
+                          : gridStyles.navBtnActive),
                     }}
                   >
                     {navBtn.label}
@@ -1209,6 +1236,7 @@ const gridStyles = {
   navBtn:           { fontSize: "11px", padding: "2px 8px", borderRadius: "4px", border: "none", fontFamily: "inherit", fontWeight: "500", whiteSpace: "nowrap" },
   navBtnActive:     { background: "#dbeafe", color: "#1d4ed8", cursor: "pointer" },
   navBtnDisabled:   { background: "#f1f5f9", color: "#94a3b8", cursor: "not-allowed" },
+  navBtnPrimary:    { background: "#16a34a", color: "#ffffff", cursor: "pointer", fontWeight: "600" },
   cellContent:      { flex: 1 },
   contentText:      { fontSize: "13px", color: "#374151", lineHeight: 1.6, whiteSpace: "pre-wrap" },
   emptyText:        { fontSize: "12px", color: "#9ca3af", fontStyle: "italic" },
