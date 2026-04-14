@@ -20,6 +20,17 @@ const WEEK_TABS = [
   { label: "4/3週",  weekKey: "2026-04-03" },
 ];
 
+// 週キー文字列（"YYYY-MM-DD"）に7日を加算して新しいタブ情報を返す
+function addOneWeek(weekKey) {
+  const [y, m, d] = weekKey.split("-").map(Number);
+  const date = new Date(y, m - 1, d + 7);
+  const yy  = date.getFullYear();
+  const mm  = String(date.getMonth() + 1).padStart(2, "0");
+  const dd  = String(date.getDate()).padStart(2, "0");
+  const label = `${date.getMonth() + 1}/${date.getDate()}週`;
+  return { label, weekKey: `${yy}-${mm}-${dd}` };
+}
+
 // ============================================================
 // DashboardPage — メインコンポーネント
 // ============================================================
@@ -44,6 +55,8 @@ export default function DashboardPage() {
   const [highlightId, setHighlightId]     = useState(null);
   const [pendingScroll, setPendingScroll] = useState(null);
   const [autoEditCardId, setAutoEditCardId] = useState(null);
+  const [extraWeekTabs, setExtraWeekTabs]   = useState([]);
+  const allTabs = [...WEEK_TABS, ...extraWeekTabs];
 
   // 大目標取得
   useEffect(() => {
@@ -134,6 +147,14 @@ export default function DashboardPage() {
       if (!data.success) throw new Error(data.message);
       // 作成されたカードのIDを記憶（表示後に自動で編集モードを開く）
       if (data.pdca?.id) setAutoEditCardId(data.pdca.id);
+      // 定義済みタブにない週なら動的にタブを追加
+      if (!WEEK_TABS.some((t) => t.weekKey === nextWeekKey)) {
+        setExtraWeekTabs((prev) =>
+          prev.some((t) => t.weekKey === nextWeekKey)
+            ? prev
+            : [...prev, addOneWeek(pdca.weekKey)]
+        );
+      }
       const refreshed = await apiGet("getPdca", {
         weekKey: nextWeekKey,
         ...(deptFilter !== "全部門" ? { dept: deptFilter } : {}),
@@ -200,7 +221,7 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <WeekTabs weekKey={weekKey} onSelect={setWeekKey} />
+      <WeekTabs weekKey={weekKey} onSelect={setWeekKey} tabs={allTabs} />
       <DeptFilter deptFilter={deptFilter} onSelect={handleDeptChange} />
       <SearchFilterBar
         goals={goals} deptFilter={deptFilter}
@@ -231,6 +252,7 @@ export default function DashboardPage() {
               onPdcaChanged={handlePdcaChanged}
               autoEditCardId={autoEditCardId}
               onAutoEditDone={() => setAutoEditCardId(null)}
+              weekTabs={allTabs}
             />
           );
         })}
@@ -241,6 +263,7 @@ export default function DashboardPage() {
         onClose={() => setShowModal(false)}
         goals={goals}
         currentWeekKey={weekKey}
+        weekTabs={allTabs}
         onSaved={() => { setShowModal(false); fetchPdca(); }}
       />
     </div>
@@ -250,11 +273,11 @@ export default function DashboardPage() {
 // ============================================================
 // WeekTabs
 // ============================================================
-function WeekTabs({ weekKey, onSelect }) {
+function WeekTabs({ weekKey, onSelect, tabs }) {
   return (
     <div style={tabStyles.bar}>
       <div style={tabStyles.inner}>
-        {WEEK_TABS.map((tab) => {
+        {tabs.map((tab) => {
           const isActive = tab.weekKey === weekKey;
           return (
             <button
@@ -362,6 +385,7 @@ function DeptSection({
   weekKey, pdcaAllWeeks, highlightId, navigateToWeek, createAndNavigate,
   user, onPdcaChanged,
   autoEditCardId, onAutoEditDone,
+  weekTabs,
 }) {
   const color     = DEPT_COLORS[dept] || "#6b7280";
   const total     = pdcaList.length;
@@ -393,6 +417,7 @@ function DeptSection({
               onPdcaChanged={onPdcaChanged}
               shouldAutoEdit={autoEditCardId === pdca.id}
               onAutoEditDone={onAutoEditDone}
+              weekTabs={weekTabs}
             />
           ))}
         </div>
@@ -437,6 +462,7 @@ function PdcaCard({
   navigateToWeek, createAndNavigate,
   user, onPdcaChanged,
   shouldAutoEdit, onAutoEditDone,
+  weekTabs,
 }) {
   const [isOpen, setIsOpen]       = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -455,10 +481,12 @@ function PdcaCard({
   const isOther  = goalName === "その他";
   const statusInfo = getStatus(isEditing ? (editForm.status || pdca.status) : pdca.status);
 
-  // 前週・次週
-  const currentTabIdx = WEEK_TABS.findIndex((t) => t.weekKey === weekKey);
-  const prevWeekKey   = currentTabIdx > 0 ? WEEK_TABS[currentTabIdx - 1].weekKey : null;
-  const nextWeekKey   = currentTabIdx < WEEK_TABS.length - 1 ? WEEK_TABS[currentTabIdx + 1].weekKey : null;
+  // 前週・次週（最終週でも+7日で次週キーを算出する）
+  const currentTabIdx = weekTabs.findIndex((t) => t.weekKey === weekKey);
+  const prevWeekKey   = currentTabIdx > 0 ? weekTabs[currentTabIdx - 1].weekKey : null;
+  const nextWeekKey   = currentTabIdx < weekTabs.length - 1
+    ? weekTabs[currentTabIdx + 1].weekKey
+    : addOneWeek(weekKey).weekKey;
   const hasPrev = !!(prevWeekKey && (pdcaAllWeeks[prevWeekKey] || []).find((p) => p.goalId === pdca.goalId));
   const hasNext = !!(nextWeekKey && (pdcaAllWeeks[nextWeekKey] || []).find((p) => p.goalId === pdca.goalId));
 
@@ -908,7 +936,7 @@ function BossArea({ pdca, user, onPdcaChanged }) {
 // ============================================================
 // NewPdcaModal — 新規PDCA入力モーダル（下からスライドアップ）
 // ============================================================
-function NewPdcaModal({ isOpen, onClose, goals, currentWeekKey, onSaved }) {
+function NewPdcaModal({ isOpen, onClose, goals, currentWeekKey, weekTabs, onSaved }) {
   const [show, setShow]           = useState(false);
   const [saving, setSaving]       = useState(false);
   const [formError, setFormError] = useState("");
@@ -992,7 +1020,7 @@ function NewPdcaModal({ isOpen, onClose, goals, currentWeekKey, onSaved }) {
           <div style={modalStyles.fieldGroup}>
             <label style={modalStyles.label}>対象週</label>
             <select value={form.weekKey} onChange={(e) => field("weekKey", e.target.value)} style={modalStyles.select}>
-              {WEEK_TABS.map((t) => <option key={t.weekKey} value={t.weekKey}>{t.label}</option>)}
+              {(weekTabs || WEEK_TABS).map((t) => <option key={t.weekKey} value={t.weekKey}>{t.label}</option>)}
             </select>
           </div>
 
