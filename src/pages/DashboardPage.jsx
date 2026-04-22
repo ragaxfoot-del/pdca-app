@@ -2,25 +2,29 @@
 // pages/DashboardPage.jsx — PDCA一覧メイン画面（タスク7実装）
 // ============================================================
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, memo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { apiGet, apiPost } from "../api/client";
-import { DEPTS, DEPT_COLORS, ROLE_LABELS, STATUSES, getStatus } from "../utils/constants";
+import { DEPTS, DEPT_COLORS, ROLE_LABELS, STATUSES, getStatus, GROUP_A_DEPTS, GROUP_B_DEPTS, WEEK_TABS_B, getGroupForDept, getCurrentWeekKeyA, getCurrentWeekKeyB, getGroupBFridayLabel } from "../utils/constants";
 
 // ============================================================
 // 週タブの定義
 // ============================================================
 const WEEK_TABS = [
-  { label: "2/27週", weekKey: "2026-02-27" },
-  { label: "3/6週",  weekKey: "2026-03-06" },
-  { label: "3/13週", weekKey: "2026-03-13" },
-  { label: "3/20週", weekKey: "2026-03-20" },
-  { label: "3/27週", weekKey: "2026-03-27" },
-  { label: "4/3週",  weekKey: "2026-04-03" },
+  { label: "2/23週", weekKey: "2026-02-23" },
+  { label: "3/2週",  weekKey: "2026-03-02" },
+  { label: "3/9週",  weekKey: "2026-03-09" },
+  { label: "3/16週", weekKey: "2026-03-16" },
+  { label: "3/23週", weekKey: "2026-03-23" },
+  { label: "3/30週", weekKey: "2026-03-30" },
+  { label: "4/6週",  weekKey: "2026-04-06" },
+  { label: "4/13週", weekKey: "2026-04-13" },
+  { label: "4/20週", weekKey: "2026-04-20" },
+  { label: "4/27週", weekKey: "2026-04-27" },
 ];
 
-// 週キー文字列（"YYYY-MM-DD"）に7日を加算して新しいタブ情報を返す
+// weekKeyに7日を加算して新しいタブ情報を返す（グループA・月曜ラベル）
 function addOneWeek(weekKey) {
   const [y, m, d] = weekKey.split("-").map(Number);
   const date = new Date(y, m - 1, d + 7);
@@ -31,6 +35,18 @@ function addOneWeek(weekKey) {
   return { label, weekKey: `${yy}-${mm}-${dd}` };
 }
 
+// グループB用：weekKeyに7日を加算（月曜weekKey）、ラベルは金曜日付で返す
+function addOneWeekB(weekKey) {
+  const [y, m, d] = weekKey.split("-").map(Number);
+  const nextMon = new Date(y, m - 1, d + 7);
+  const yy  = nextMon.getFullYear();
+  const mm  = String(nextMon.getMonth() + 1).padStart(2, "0");
+  const dd  = String(nextMon.getDate()).padStart(2, "0");
+  const fri = new Date(y, m - 1, d + 7 - 3); // 月曜 − 3日 = 金曜
+  const label = `${fri.getMonth() + 1}/${fri.getDate()}週`;
+  return { label, weekKey: `${yy}-${mm}-${dd}` };
+}
+
 // ============================================================
 // DashboardPage — メインコンポーネント
 // ============================================================
@@ -38,25 +54,33 @@ export default function DashboardPage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  const [weekKey, setWeekKey]       = useState(WEEK_TABS[WEEK_TABS.length - 1].weekKey);
+  const [weekKey, setWeekKey]       = useState(getCurrentWeekKeyA());
   const [deptFilter, setDeptFilter] = useState("全部門");
   const [goalFilter, setGoalFilter] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showModal, setShowModal]   = useState(false);
 
   const [goals, setGoals]           = useState([]);
-  const [pdcaList, setPdcaList]     = useState([]);
+  const [pdcaList, setPdcaList]     = useState([]);   // グループA（または単独部署）
+  const [pdcaListB, setPdcaListB]   = useState([]);   // グループB（全部門モード専用）
   const [pdcaAllWeeks, setPdcaAllWeeks] = useState({});
 
   const [loadingGoals, setLoadingGoals] = useState(true);
   const [loadingPdca, setLoadingPdca]   = useState(false);
+  const [loadingPdcaB, setLoadingPdcaB] = useState(false);
   const [error, setError]           = useState("");
 
   const [highlightId, setHighlightId]     = useState(null);
   const [pendingScroll, setPendingScroll] = useState(null);
   const [autoEditCardId, setAutoEditCardId] = useState(null);
-  const [extraWeekTabs, setExtraWeekTabs]   = useState([]);
-  const allTabs = [...WEEK_TABS, ...extraWeekTabs];
+  const [extraWeekTabsA, setExtraWeekTabsA] = useState([]);
+  const [extraWeekTabsB, setExtraWeekTabsB] = useState([]);
+
+  // 部署グループ判定・タブ計算
+  const deptGroup   = deptFilter !== "全部門" ? getGroupForDept(deptFilter) : null;
+  const allTabsA    = [...WEEK_TABS, ...extraWeekTabsA];
+  const allTabsB    = [...WEEK_TABS_B, ...extraWeekTabsB];
+  const currentTabs = deptGroup === "B" ? allTabsB : allTabsA;
 
   // 大目標取得
   useEffect(() => {
@@ -75,40 +99,66 @@ export default function DashboardPage() {
 
   // 現在週のPDCA取得
   const fetchPdca = useCallback(async () => {
-    setLoadingPdca(true);
     setError("");
-    try {
-      const params = { weekKey };
-      if (deptFilter !== "全部門") params.dept = deptFilter;
-      const data = await apiGet("getPdca", params);
-      if (!data.success) throw new Error(data.message);
-      setPdcaList(data.pdca);
-      setPdcaAllWeeks((prev) => ({ ...prev, [weekKey]: data.pdca }));
-    } catch (err) {
-      setError("PDCAデータの取得に失敗しました: " + err.message);
-    } finally {
-      setLoadingPdca(false);
+    if (deptFilter === "全部門") {
+      // 全部門モード：グループAとBを並列取得
+      const wkA = getCurrentWeekKeyA();
+      const wkB = getCurrentWeekKeyB();
+      setLoadingPdca(true);
+      setLoadingPdcaB(true);
+      try {
+        const [dataA, dataB] = await Promise.all([
+          apiGet("getPdca", { weekKey: wkA }),
+          apiGet("getPdca", { weekKey: wkB }),
+        ]);
+        if (!dataA.success) throw new Error(dataA.message);
+        if (!dataB.success) throw new Error(dataB.message);
+        setPdcaList(dataA.pdca);
+        setPdcaListB(dataB.pdca);
+      } catch (err) {
+        setError("PDCAデータの取得に失敗しました: " + err.message);
+      } finally {
+        setLoadingPdca(false);
+        setLoadingPdcaB(false);
+      }
+    } else {
+      // 単独部署モード
+      setLoadingPdca(true);
+      try {
+        const data = await apiGet("getPdca", { weekKey, dept: deptFilter });
+        if (!data.success) throw new Error(data.message);
+        setPdcaList(data.pdca);
+        setPdcaAllWeeks((prev) => ({ ...prev, [weekKey]: data.pdca }));
+      } catch (err) {
+        setError("PDCAデータの取得に失敗しました: " + err.message);
+      } finally {
+        setLoadingPdca(false);
+      }
     }
   }, [weekKey, deptFilter]);
 
   useEffect(() => { fetchPdca(); }, [fetchPdca]);
 
-  // 全週プリフェッチ
+  // 前後1週のみ並列プリフェッチ（「先週ACTへ」「次週PLANへ」ボタンの状態判定用）
   useEffect(() => {
-    setPdcaAllWeeks({});
-    (async () => {
-      for (const tab of WEEK_TABS) {
-        try {
-          const params = { weekKey: tab.weekKey };
-          if (deptFilter !== "全部門") params.dept = deptFilter;
-          const data = await apiGet("getPdca", params);
-          if (data.success) {
-            setPdcaAllWeeks((prev) => ({ ...prev, [tab.weekKey]: data.pdca }));
-          }
-        } catch (e) { /* 無視 */ }
-      }
-    })();
-  }, [deptFilter]);
+    if (deptFilter === "全部門") return; // 全部門モードでは不要
+    const currentIdx = currentTabs.findIndex((t) => t.weekKey === weekKey);
+    const adjacent = [
+      currentIdx > 0                      ? currentTabs[currentIdx - 1].weekKey : null,
+      currentIdx < currentTabs.length - 1 ? currentTabs[currentIdx + 1].weekKey : null,
+    ].filter(Boolean);
+
+    adjacent.forEach(async (wk) => {
+      if (pdcaAllWeeks[wk] !== undefined) return;
+      try {
+        const data = await apiGet("getPdca", { weekKey: wk, dept: deptFilter });
+        if (data.success) {
+          setPdcaAllWeeks((prev) => ({ ...prev, [wk]: data.pdca }));
+        }
+      } catch (e) { /* 無視 */ }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekKey, deptFilter, currentTabs]);
 
   // pendingScroll → スクロール＆ハイライト
   useEffect(() => {
@@ -147,12 +197,15 @@ export default function DashboardPage() {
       if (!data.success) throw new Error(data.message);
       // 作成されたカードのIDを記憶（表示後に自動で編集モードを開く）
       if (data.pdca?.id) setAutoEditCardId(data.pdca.id);
-      // 定義済みタブにない週なら動的にタブを追加
-      if (!WEEK_TABS.some((t) => t.weekKey === nextWeekKey)) {
-        setExtraWeekTabs((prev) =>
+      // 定義済みタブにない週なら動的にタブを追加（グループごとに管理）
+      const pdcaGroup   = getGroupForDept(pdca.dept);
+      const baseTabs    = pdcaGroup === "B" ? WEEK_TABS_B : WEEK_TABS;
+      const setExtraTabs = pdcaGroup === "B" ? setExtraWeekTabsB : setExtraWeekTabsA;
+      if (!baseTabs.some((t) => t.weekKey === nextWeekKey)) {
+        setExtraTabs((prev) =>
           prev.some((t) => t.weekKey === nextWeekKey)
             ? prev
-            : [...prev, addOneWeek(pdca.weekKey)]
+            : [...prev, pdcaGroup === "B" ? addOneWeekB(pdca.weekKey) : addOneWeek(pdca.weekKey)]
         );
       }
       const refreshed = await apiGet("getPdca", {
@@ -170,22 +223,40 @@ export default function DashboardPage() {
 
   // PDCAの部分更新（再フェッチ不要）
   const handlePdcaChanged = useCallback((updatedPdca) => {
-    setPdcaList((prev) => prev.map((p) => p.id === updatedPdca.id ? updatedPdca : p));
-    setPdcaAllWeeks((prev) => {
-      const next = { ...prev };
-      for (const wk of Object.keys(next)) {
-        if (next[wk].some((p) => p.id === updatedPdca.id)) {
-          next[wk] = next[wk].map((p) => p.id === updatedPdca.id ? updatedPdca : p);
-        }
+    if (deptFilter === "全部門") {
+      // 全部門モードはグループごとのリストを更新
+      const group = getGroupForDept(updatedPdca.dept);
+      if (group === "A") {
+        setPdcaList((prev) => prev.map((p) => p.id === updatedPdca.id ? updatedPdca : p));
+      } else {
+        setPdcaListB((prev) => prev.map((p) => p.id === updatedPdca.id ? updatedPdca : p));
       }
-      return next;
-    });
-  }, []);
+    } else {
+      setPdcaList((prev) => prev.map((p) => p.id === updatedPdca.id ? updatedPdca : p));
+      setPdcaAllWeeks((prev) => {
+        const next = { ...prev };
+        for (const wk of Object.keys(next)) {
+          if (next[wk].some((p) => p.id === updatedPdca.id)) {
+            next[wk] = next[wk].map((p) => p.id === updatedPdca.id ? updatedPdca : p);
+          }
+        }
+        return next;
+      });
+    }
+  }, [deptFilter]);
 
   const handleDeptChange = useCallback((dept) => {
     setDeptFilter(dept);
     setGoalFilter(null);
+    setPdcaAllWeeks({});
+    if (dept !== "全部門") {
+      // 切り替え先部署のグループに合った今週に移動
+      const group = getGroupForDept(dept);
+      setWeekKey(group === "B" ? getCurrentWeekKeyB() : getCurrentWeekKeyA());
+    }
   }, []);
+
+  const handleAutoEditDone = useCallback(() => setAutoEditCardId(null), []);
 
   const goalsMap = Object.fromEntries(goals.map((g) => [g.id, g]));
 
@@ -213,7 +284,9 @@ export default function DashboardPage() {
           <span style={styles.userInfo}>
             {user?.name}（{ROLE_LABELS[user?.role] || user?.role}）
           </span>
-          <button onClick={() => setShowModal(true)} style={styles.newBtn}>＋ 新規入力</button>
+          {deptFilter !== "全部門" && (
+            <button onClick={() => setShowModal(true)} style={styles.newBtn}>＋ 新規入力</button>
+          )}
           {(user?.role || "").toLowerCase().trim() === "admin" && (
             <button onClick={() => navigate("/admin")} style={styles.adminBtn}>ユーザー管理</button>
           )}
@@ -221,7 +294,10 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <WeekTabs weekKey={weekKey} onSelect={setWeekKey} tabs={allTabs} />
+      {deptFilter !== "全部門" && (
+        <WeekTabs weekKey={weekKey} onSelect={setWeekKey} tabs={currentTabs} />
+      )}
+      {deptFilter === "全部門" && <AllDeptWeekBanner />}
       <DeptFilter deptFilter={deptFilter} onSelect={handleDeptChange} />
       <SearchFilterBar
         goals={goals} deptFilter={deptFilter}
@@ -235,24 +311,39 @@ export default function DashboardPage() {
           <div style={styles.loading}>データを読み込み中...</div>
         )}
         {!loadingGoals && visibleDepts.map((dept) => {
-          const deptPdca = applyFilters(pdcaList.filter((p) => p.dept === dept));
+          const isAllDept   = deptFilter === "全部門";
+          const group       = getGroupForDept(dept);
+          const deptWeekKey = isAllDept
+            ? (group === "A" ? getCurrentWeekKeyA() : getCurrentWeekKeyB())
+            : weekKey;
+          const sourceList  = isAllDept
+            ? (group === "A" ? pdcaList : pdcaListB)
+            : pdcaList;
+          const isLoadingDept = isAllDept
+            ? (group === "A" ? loadingPdca : loadingPdcaB)
+            : loadingPdca;
+          const deptPdca    = applyFilters(sourceList.filter((p) => p.dept === dept));
+          const deptAllWeeks = isAllDept
+            ? { [deptWeekKey]: sourceList }
+            : pdcaAllWeeks;
           return (
             <DeptSection
               key={dept}
               dept={dept}
               pdcaList={deptPdca}
               goalsMap={goalsMap}
-              isLoading={loadingPdca}
-              weekKey={weekKey}
-              pdcaAllWeeks={pdcaAllWeeks}
+              isLoading={isLoadingDept}
+              weekKey={deptWeekKey}
+              pdcaAllWeeks={deptAllWeeks}
               highlightId={highlightId}
               navigateToWeek={navigateToWeek}
               createAndNavigate={createAndNavigate}
               user={user}
               onPdcaChanged={handlePdcaChanged}
               autoEditCardId={autoEditCardId}
-              onAutoEditDone={() => setAutoEditCardId(null)}
-              weekTabs={allTabs}
+              onAutoEditDone={handleAutoEditDone}
+              weekTabs={isAllDept ? [] : currentTabs}
+              hideWeekNav={isAllDept}
             />
           );
         })}
@@ -263,9 +354,33 @@ export default function DashboardPage() {
         onClose={() => setShowModal(false)}
         goals={goals}
         currentWeekKey={weekKey}
-        weekTabs={allTabs}
+        weekTabsA={allTabsA}
+        weekTabsB={allTabsB}
         onSaved={() => { setShowModal(false); fetchPdca(); }}
       />
+    </div>
+  );
+}
+
+// ============================================================
+// AllDeptWeekBanner — 全部門モードで表示する現在週の案内バー
+// ============================================================
+function AllDeptWeekBanner() {
+  const wkA  = getCurrentWeekKeyA();
+  const wkB  = getCurrentWeekKeyB();
+  // グループAは月曜日をそのまま表示
+  const [, mA, dA] = wkA.split("-");
+  const fmtA = `${Number(mA)}/${Number(dA)}`;
+  // グループBは月曜weekKeyから金曜ラベルに変換して表示
+  const fmtB = getGroupBFridayLabel(wkB);
+  return (
+    <div style={bannerStyles.bar}>
+      <span style={{ ...bannerStyles.badge, borderColor: "#2563eb", color: "#1d4ed8", background: "#eff6ff" }}>
+        月〜日グループ（{GROUP_A_DEPTS.join("・")}）：{fmtA}週
+      </span>
+      <span style={{ ...bannerStyles.badge, borderColor: "#7c3aed", color: "#6d28d9", background: "#f5f3ff" }}>
+        金〜木グループ（{GROUP_B_DEPTS.join("・")}）：{fmtB}週
+      </span>
     </div>
   );
 }
@@ -385,7 +500,7 @@ function DeptSection({
   weekKey, pdcaAllWeeks, highlightId, navigateToWeek, createAndNavigate,
   user, onPdcaChanged,
   autoEditCardId, onAutoEditDone,
-  weekTabs,
+  weekTabs, hideWeekNav = false,
 }) {
   const color     = DEPT_COLORS[dept] || "#6b7280";
   const total     = pdcaList.length;
@@ -418,6 +533,7 @@ function DeptSection({
               shouldAutoEdit={autoEditCardId === pdca.id}
               onAutoEditDone={onAutoEditDone}
               weekTabs={weekTabs}
+              hideWeekNav={hideWeekNav}
             />
           ))}
         </div>
@@ -455,14 +571,15 @@ function DeptSummaryBar({ dept, color, total, doneCount, pct, confirmed }) {
 
 // ============================================================
 // PdcaCard — PDCAカード（展開・編集・社長機能対応）
+// memo()でラップ: propsが変わらない限り再レンダリングをスキップ
 // ============================================================
-function PdcaCard({
+const PdcaCard = memo(function PdcaCard({
   pdca, goalsMap, deptColor,
   weekKey, pdcaAllWeeks, isHighlighted,
   navigateToWeek, createAndNavigate,
   user, onPdcaChanged,
   shouldAutoEdit, onAutoEditDone,
-  weekTabs,
+  weekTabs, hideWeekNav = false,
 }) {
   const [isOpen, setIsOpen]       = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -490,8 +607,8 @@ function PdcaCard({
   const hasPrev = !!(prevWeekKey && (pdcaAllWeeks[prevWeekKey] || []).find((p) => p.goalId === pdca.goalId));
   const hasNext = !!(nextWeekKey && (pdcaAllWeeks[nextWeekKey] || []).find((p) => p.goalId === pdca.goalId));
 
-  const onNavPrev = (prevWeekKey && hasPrev) ? () => navigateToWeek(prevWeekKey, pdca.goalId) : null;
-  const onNavNext = nextWeekKey
+  const onNavPrev = (!hideWeekNav && prevWeekKey && hasPrev) ? () => navigateToWeek(prevWeekKey, pdca.goalId) : null;
+  const onNavNext = (!hideWeekNav && nextWeekKey)
     ? (hasNext ? () => navigateToWeek(nextWeekKey, pdca.goalId) : () => createAndNavigate(nextWeekKey, pdca))
     : null;
 
@@ -676,7 +793,7 @@ function PdcaCard({
       </div>
     </div>
   );
-}
+});
 
 // ============================================================
 // PdcaGrid — PDCA 4分割グリッド（赤字追記・編集モード対応）
@@ -936,13 +1053,13 @@ function BossArea({ pdca, user, onPdcaChanged }) {
 // ============================================================
 // NewPdcaModal — 新規PDCA入力モーダル（下からスライドアップ）
 // ============================================================
-function NewPdcaModal({ isOpen, onClose, goals, currentWeekKey, weekTabs, onSaved }) {
+function NewPdcaModal({ isOpen, onClose, goals, currentWeekKey, weekTabsA, weekTabsB, onSaved }) {
   const [show, setShow]           = useState(false);
   const [saving, setSaving]       = useState(false);
   const [formError, setFormError] = useState("");
 
   const initForm = useCallback(() => ({
-    weekKey: currentWeekKey,
+    weekKey: getGroupForDept(DEPTS[0]) === "B" ? getCurrentWeekKeyB() : getCurrentWeekKeyA(),
     dept:    DEPTS[0] || "",
     goalId:  "",
     midGoal: "",
@@ -1020,7 +1137,9 @@ function NewPdcaModal({ isOpen, onClose, goals, currentWeekKey, weekTabs, onSave
           <div style={modalStyles.fieldGroup}>
             <label style={modalStyles.label}>対象週</label>
             <select value={form.weekKey} onChange={(e) => field("weekKey", e.target.value)} style={modalStyles.select}>
-              {(weekTabs || WEEK_TABS).map((t) => <option key={t.weekKey} value={t.weekKey}>{t.label}</option>)}
+              {(getGroupForDept(form.dept) === "B" ? weekTabsB : weekTabsA).map((t) => (
+                <option key={t.weekKey} value={t.weekKey}>{t.label}</option>
+              ))}
             </select>
           </div>
 
@@ -1028,7 +1147,12 @@ function NewPdcaModal({ isOpen, onClose, goals, currentWeekKey, weekTabs, onSave
             <label style={modalStyles.label}>部門</label>
             <select
               value={form.dept}
-              onChange={(e) => setForm((f) => ({ ...f, dept: e.target.value, goalId: "" }))}
+              onChange={(e) => {
+                const newDept = e.target.value;
+                const newGroup = getGroupForDept(newDept);
+                const newWeekKey = newGroup === "B" ? getCurrentWeekKeyB() : getCurrentWeekKeyA();
+                setForm((f) => ({ ...f, dept: newDept, goalId: "", weekKey: newWeekKey }));
+              }}
               style={modalStyles.select}
             >
               {DEPTS.map((d) => <option key={d} value={d}>{d}</option>)}
@@ -1137,6 +1261,18 @@ const styles = {
     borderRadius: "8px", padding: "12px 16px", marginBottom: "16px", fontSize: "14px",
   },
   loading:     { textAlign: "center", padding: "60px 0", color: "#94a3b8", fontSize: "14px" },
+};
+
+const bannerStyles = {
+  bar:   {
+    background: "#f8fafc", borderBottom: "1px solid #e2e8f0",
+    padding: "8px 20px", display: "flex", gap: "10px", flexWrap: "wrap",
+    maxWidth: "960px", margin: "0 auto",
+  },
+  badge: {
+    display: "inline-flex", alignItems: "center", fontSize: "12px", fontWeight: "600",
+    padding: "4px 12px", borderRadius: "14px", border: "1px solid", whiteSpace: "nowrap",
+  },
 };
 
 const tabStyles = {
