@@ -332,6 +332,7 @@ export default function DashboardPage() {
               dept={dept}
               pdcaList={deptPdca}
               goalsMap={goalsMap}
+              goals={goals}
               isLoading={isLoadingDept}
               weekKey={deptWeekKey}
               pdcaAllWeeks={deptAllWeeks}
@@ -496,7 +497,7 @@ function SearchFilterBar({ goals, deptFilter, goalFilter, onGoalFilter, searchQu
 // DeptSection
 // ============================================================
 function DeptSection({
-  dept, pdcaList, goalsMap, isLoading,
+  dept, pdcaList, goalsMap, goals, isLoading,
   weekKey, pdcaAllWeeks, highlightId, navigateToWeek, createAndNavigate,
   user, onPdcaChanged,
   autoEditCardId, onAutoEditDone,
@@ -522,6 +523,7 @@ function DeptSection({
               key={pdca.id}
               pdca={pdca}
               goalsMap={goalsMap}
+              goals={goals}
               deptColor={color}
               weekKey={weekKey}
               pdcaAllWeeks={pdcaAllWeeks}
@@ -574,7 +576,7 @@ function DeptSummaryBar({ dept, color, total, doneCount, pct, confirmed }) {
 // memo()でラップ: propsが変わらない限り再レンダリングをスキップ
 // ============================================================
 const PdcaCard = memo(function PdcaCard({
-  pdca, goalsMap, deptColor,
+  pdca, goalsMap, goals, deptColor,
   weekKey, pdcaAllWeeks, isHighlighted,
   navigateToWeek, createAndNavigate,
   user, onPdcaChanged,
@@ -615,6 +617,7 @@ const PdcaCard = memo(function PdcaCard({
   // 編集開始
   const startEdit = () => {
     setEditForm({
+      goalId:  pdca.goalId || "",
       midGoal: pdca.midGoal || "",
       plan:    pdca.plan || "",
       do:      pdca.do  || "",
@@ -685,8 +688,23 @@ const PdcaCard = memo(function PdcaCard({
         {/* ---- カードヘッダー ---- */}
         <div style={cardStyles.headerRow}>
           <div style={cardStyles.goalArea}>
-            {isOther && <span style={cardStyles.otherBadge}>その他</span>}
-            <span style={cardStyles.goalName}>{goalName}</span>
+            {isEditing ? (
+              <select
+                value={editForm.goalId}
+                onChange={(e) => setEditForm((f) => ({ ...f, goalId: e.target.value }))}
+                style={cardStyles.goalSelect}
+              >
+                <option value="">選択してください</option>
+                {(goals || []).filter((g) => g.dept === pdca.dept).map((g) => (
+                  <option key={g.id} value={g.id}>{g.goalName}</option>
+                ))}
+              </select>
+            ) : (
+              <>
+                {isOther && <span style={cardStyles.otherBadge}>その他</span>}
+                <span style={cardStyles.goalName}>{goalName}</span>
+              </>
+            )}
           </div>
           <div style={cardStyles.badges}>
             {pdca.bossConfirmed && <span style={cardStyles.confirmedBadge}>✅ 確認済</span>}
@@ -1357,6 +1375,7 @@ const cardStyles = {
   goalArea:       { display: "flex", alignItems: "center", gap: "8px", flex: 1, flexWrap: "wrap" },
   otherBadge:     { fontSize: "11px", fontWeight: "700", color: "#92400e", background: "#fef3c7", padding: "2px 6px", borderRadius: "4px", border: "1px solid #fde68a", whiteSpace: "nowrap" },
   goalName:       { fontSize: "14px", fontWeight: "600", color: "#0f172a", lineHeight: 1.4 },
+  goalSelect:     { fontSize: "14px", fontWeight: "600", color: "#0f172a", padding: "4px 8px", border: "1px solid #93c5fd", borderRadius: "6px", background: "#eff6ff", cursor: "pointer", fontFamily: "inherit" },
   badges:         { display: "flex", alignItems: "center", gap: "6px", flexShrink: 0, flexWrap: "wrap" },
   confirmedBadge: { fontSize: "11px", fontWeight: "600", color: "#059669", background: "#d1fae5", padding: "2px 7px", borderRadius: "10px", border: "1px solid #a7f3d0", whiteSpace: "nowrap" },
   statusBadge:    { fontSize: "11px", fontWeight: "700", color: "#ffffff", padding: "3px 8px", borderRadius: "10px", whiteSpace: "nowrap" },
