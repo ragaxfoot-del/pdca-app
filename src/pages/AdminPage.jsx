@@ -10,6 +10,17 @@ import { ROLE_LABELS } from "../utils/constants";
 // 新規・編集フォームの初期値
 const EMPTY_FORM = { id: "", email: "", password: "", name: "", role: "general", dept: "" };
 
+// ビルド日時をフォーマットする関数
+function formatBuildDate(isoString) {
+  const date = new Date(isoString);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `更新: ${year}/${month}/${day} ${hours}:${minutes}`;
+}
+
 export default function AdminPage() {
   const navigate = useNavigate();
 
@@ -267,6 +278,11 @@ export default function AdminPage() {
           )}
         </section>
       </main>
+
+      {/* フッター */}
+      <footer style={footerStyles.wrapper}>
+        {formatBuildDate(__BUILD_DATE__)}
+      </footer>
     </div>
   );
 }
@@ -485,4 +501,8 @@ const styles = {
     cursor: "pointer",
     fontFamily: "inherit",
   },
+};
+
+const footerStyles = {
+  wrapper: { textAlign: "center", padding: "20px", color: "#94a3b8", fontSize: "12px", borderTop: "1px solid #e2e8f0", marginTop: "40px" },
 };

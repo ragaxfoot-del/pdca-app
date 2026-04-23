@@ -50,6 +50,18 @@ function addOneWeekB(weekKey) {
 // ============================================================
 // DashboardPage — メインコンポーネント
 // ============================================================
+
+// ビルド日時をフォーマットする関数
+function formatBuildDate(isoString) {
+  const date = new Date(isoString);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `更新: ${year}/${month}/${day} ${hours}:${minutes}`;
+}
+
 export default function DashboardPage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -359,6 +371,11 @@ export default function DashboardPage() {
         weekTabsB={allTabsB}
         onSaved={() => { setShowModal(false); fetchPdca(); }}
       />
+
+      {/* フッター */}
+      <footer style={footerStyles.wrapper}>
+        {formatBuildDate(__BUILD_DATE__)}
+      </footer>
     </div>
   );
 }
@@ -1479,4 +1496,8 @@ const modalStyles = {
   footer:      { display: "flex", gap: "10px", padding: "12px 20px 24px", borderTop: "1px solid #f1f5f9", position: "sticky", bottom: 0, background: "#ffffff" },
   cancelBtn:   { flex: 1, padding: "10px", border: "2px solid #e5e7eb", borderRadius: "8px", background: "#ffffff", color: "#374151", fontSize: "14px", fontWeight: "600", cursor: "pointer", fontFamily: "inherit" },
   saveBtn:     { flex: 2, padding: "10px", border: "none", borderRadius: "8px", background: "#2563eb", color: "#ffffff", fontSize: "14px", fontWeight: "700", cursor: "pointer", fontFamily: "inherit" },
+};
+
+const footerStyles = {
+  wrapper: { textAlign: "center", padding: "20px", color: "#94a3b8", fontSize: "12px", borderTop: "1px solid #e2e8f0", marginTop: "40px" },
 };
